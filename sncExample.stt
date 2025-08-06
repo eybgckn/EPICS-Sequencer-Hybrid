@@ -1,0 +1,149 @@
+program SysCheck
+option +r;        /* gerçek zamanlı okuma için */
+
+
+%{
+#include <errlog.h>
+%}
+ 
+string mode;
+assign mode to "${sys}:${sec}:${dev}:SET_MODE";
+monitor mode;
+
+double current;
+assign current to "${sys}:${sec}:${dev}:SET_CURRENT";               /* sistem makroları süslü parantez */
+monitor mode;
+
+double volt;
+assign volt to "${sys}:${sec}:${dev}:SET_VOLT";
+monitor volt;
+
+
+%{
+
+    static const char   OPEN_LOOP[]      = "Open-Loop";
+    static const double SAFE_VOLTAGE     = 10.0;
+    static const double VOLTAGE_DROP_STEP = 1.0;
+
+    static int isOpenLoop(const char *mode);
+    static int decreaseVoltage(double *voltage);
+
+    static int isOpenLoop(const char *mode) {
+        return (mode && strcmp(mode, OPEN_LOOP) == 0);
+    }
+
+    /* Safely reduce *voltage toward SAFE_VOLTAGE in increments */
+    static int decreaseVoltage(double *voltage) {
+        if (!voltage) {
+            return 0;
+        }
+
+        if (*voltage > SAFE_VOLTAGE) {
+            double delta = *voltage - SAFE_VOLTAGE;
+            double step   = (delta < VOLTAGE_DROP_STEP)
+                            ? delta
+                            : VOLTAGE_DROP_STEP;
+            *voltage -= step;
+
+            errlogSevPrintf(errlogInfo,
+                            "Voltage decreased to %.2f V\n",
+                            *voltage);
+            return 1;
+        }
+
+        errlogSevPrintf(errlogInfo,
+                        "Voltage at safe level: %.2f V\n",
+                        *voltage);
+        return 0;
+    }
+}%
+
+ss state1 {
+    state init {
+        when(delay(2)){
+
+			printf("Mode degeri :%s",mode);
+            printf("-------------------------------------\n");
+		
+        } state init
+    }
+}
+
+
+ss Monitor {
+
+    string lastMode;
+    double lastCurrent;
+    double lastVolt;
+
+    state init {
+        entry {
+            pvGet(mode);
+            pvGet(current);            /* hata var 70-71-72 */
+            pvGet(volt); 
+            
+            strcpy(lastMode, mode);
+            lastCurrent = current;
+            lastVolt    = volt;
+
+            errlogSevPrintf(errlogInfo,
+                "Başlangıç: Volt=%.2f, Akım=%.2f, Mod=%s\n", volt, current, mode);
+        }
+        when (1) {
+        } state observation
+    }
+
+    state observation {
+        when (1) {
+            pvGet(mode);                   /* hata var 87 */
+            if (strcmp(mode, lastMode) != 0) {
+                errlogSevPrintf(errlogInfo, "Mode changed: %s\n", mode);
+                strcpy(lastMode, mode);
+            }
+        } state Polling
+    }
+
+    state Polling {
+        option -t;
+
+        when (delay(0.1)) {
+            pvGet(mode);               /*hata var 99-100-101 */
+            pvGet(current);            
+            pvGet(volt);
+
+            if (strcmp(mode, lastMode) != 0) {
+                errlogSevPrintf(errlogInfo,
+                    "Mode değişti: %s\n", mode);
+                strcpy(lastMode, mode);
+            }
+            if (current != lastCurrent) {
+                errlogSevPrintf(errlogInfo,
+                    "Akım değişti: %.2f\n", current);
+                lastCurrent = current;
+            }
+            if (volt != lastVolt) {
+                errlogSevPrintf(errlogInfo,
+                    "Gerilim değişti: %.2f\n", volt);
+                lastVolt = volt;
+            }
+        } state voltage_drop
+    }
+
+    state voltage_drop {
+        option -t;
+
+        when (current == 0.0 && isOpenLoop(mode) && volt > SAFE_VOLTAGE && delay(0.1)) {
+            double v = volt;
+            decreaseVoltage(&v);
+            volt = v;
+            pvPut(volt);                /* hata var 128 */
+        } state Polling
+
+        when (current == 0.0 && isOpenLoop(mode) && volt <= SAFE_VOLTAGE) {
+            errlogSevPrintf(errlogInfo,
+                "Volt güvenli: %.2f V\n", volt);
+        } state init
+    }
+}
+
+
