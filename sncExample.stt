@@ -4,18 +4,18 @@ option +r;        /* gerçek zamanlı okuma için */
 
 %{
 #include <errlog.h>
-%}
+}%
  
 string mode;
-assign mode to "${sys}:${sec}:${dev}:SET_MODE";
+assign mode to "{sys}:{sec}:{dev}:SET_MODE";
 monitor mode;
 
 double current;
-assign current to "${sys}:${sec}:${dev}:SET_CURRENT";               /* sistem makroları süslü parantez */
-monitor mode;
+assign current to "{sys}:{sec}:{dev}:SET_CURRENT";               /* sistem makroları süslü parantez */
+monitor current;
 
 double volt;
-assign volt to "${sys}:${sec}:${dev}:SET_VOLT";
+assign volt to "{sys}:{sec}:{dev}:SET_VOLT";
 monitor volt;
 
 
