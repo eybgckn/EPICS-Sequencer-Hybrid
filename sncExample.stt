@@ -2,9 +2,7 @@ program SysCheck
 option +r;        /* gerçek zamanlı okuma için */
 /* option -c;    Programın, pvlerin hepsinin bağlanmasını beklemeden çalıştırır. */
 
-%{
-#include <errlog.h>
-}%
+
  
 string mode;
 assign mode to "{sys}:{sec}:{dev}:SET_MODE";
@@ -34,9 +32,7 @@ monitor volt;
     }
 
     static int decreaseVoltage(double *voltage) {
-        if (!voltage) {
-            return 0;
-        }
+
 
         if (*voltage > SAFE_VOLTAGE) {
             double delta = *voltage - SAFE_VOLTAGE;
@@ -66,7 +62,7 @@ ss Monitor {
     double lastCurrent;
     double lastVolt;
 
-    int safeLogged = 0;      /*mesajı gereksiz tekrarları engellemek için yalnızca bir kez yazılır.*/
+    int safeLogged = 0;      
 
     state init {
         
@@ -80,7 +76,7 @@ ss Monitor {
             lastCurrent = current;
             lastVolt    = volt;
 
-            errlogSevPrintf(errlogInfo,
+            printf(
                 "Başlangıç: Volt=%.2f, Akım=%.2f, Mod=%s\n", volt, current, mode);
         }
         when (1) {
@@ -91,14 +87,14 @@ ss Monitor {
         
         when (strcmp(mode, lastMode) != 0) {
             pvGet(mode);
-            errlogSevPrintf(errlogInfo, "Dongu modu degistirildi: %s\n", mode);
+            printf( "Dongu modu degistirildi: %s\n", mode);
             strcpy(lastMode, mode);
         } state Polling
 
         when (current != lastCurrent) {
             pvGet(current);
             if (current != lastCurrent) {
-                errlogSevPrintf(errlogInfo, "Akim degistirildi: %.2f\n", current);
+                printf( "Akim degistirildi: %.2f\n", current);
                 lastCurrent = current;
             }
         } state Polling
@@ -106,17 +102,16 @@ ss Monitor {
         when (volt != lastVolt) {
             pvGet(volt);
             if (volt != lastVolt) {
-                errlogSevPrintf(errlogInfo, "Gerilim degistirildi: %.2f\n", volt);
+                printf( "Gerilim degistirildi: %.2f\n", volt);
                 lastVolt = volt;
             }
         } state Polling
     }
 
     state Polling {
-        option -t;
 
         when (volt <= SAFE_VOLTAGE && !safeLogged) {
-            errlogSevPrintf(errlogInfo, "Gerilim seviyesi guvenlidir: %.2f V\n", volt);
+            printf( "Gerilim seviyesi guvenlidir: %.2f V\n", volt);
             safeLogged = 1;
 
         } state observation
@@ -137,7 +132,6 @@ ss Monitor {
             } 
         } state Polling
     }
-     
 }
   
         
@@ -147,35 +141,3 @@ ss Monitor {
 
 
 
-/* 
-
-Bu bölüm "if" ifadelerini "durum" ifadelerine bağlayan geçiş formatı hakkında bilgi edinilmek için bulunmuş ve kullanılmıştır. 
-Bu teknik 2 farklı "state" halindeki 2 "when" ifadesindeki delay fonksiyonun (0.1 saniyede) çalışma çakışmasını engellemek için edinilmiştir.
-Bu çakışma istenilen süreyi saptırabilir. Bu yüzden bu format ele alınarak "state Polling" durumu  altında "state voltage drop" fonksiyonları yerleştirilerek 
-tek bir durum ifadesi altında çalışılacaktır, "state voltage_drop" kaldırılmıştır.
-
-ss generate_voltage {
-    state init {
-        when (efTestAndClear(ef1)) {
-            printf("start ramp\n");
-            fdprintf(fd, "start ramp\n");
-            delta = 0.2;
-        } state ramp
-    }
-
-
-    state ramp {
-        when (delay(0.1)) {
-            if ((delta > 0.0 && ao2 >= 11.0) ||
-                (delta < 0.0 && ao2 <= -11.0)) {
-                delta = -delta;
-            }
-            ao2 += delta;
-            pvPut(ao2);
-        } state ramp
-
-        when (efTestAndClear(ef2)) {
-        } state init
-    }
-}
-*/
