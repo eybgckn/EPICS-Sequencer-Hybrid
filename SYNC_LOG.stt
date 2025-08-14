@@ -1,0 +1,163 @@
+program SysSeq
+option +r;       
+
+
+string mode;
+assign mode to "{sys}:{sec}:{dev_mock}:SET_MODE";
+monitor mode;
+
+double current;
+assign current to "{sys}:{sec}:{dev}:SET_CURRENT";               
+monitor current;
+
+double volt;
+assign volt to "{sys}:{sec}:{dev}:SET_VOLT";
+monitor volt;
+
+
+%{
+
+    static const char*   OPEN_LOOP      = "Open-Loop";
+    static const double SAFE_VOLTAGE     = 10.0;
+    static const double VOLTAGE_DROP_STEP = 1.0;
+
+    static int isOpenLoop(const char *mode);
+    static int decreaseVoltage(double *voltage);
+
+    static int isOpenLoop(const char *mode) {
+        return (mode && strcmp(mode, OPEN_LOOP) == 0);
+    }
+
+    static int decreaseVoltage(double *voltage) {
+
+
+        if (*voltage > SAFE_VOLTAGE) {
+            double delta = *voltage - SAFE_VOLTAGE;
+            double step   = (delta < VOLTAGE_DROP_STEP)
+                            ? delta
+                            : VOLTAGE_DROP_STEP;
+            *voltage -= step;
+
+            printf( "Gerilim azaltildi: %.2f V\n", *voltage);
+
+            return 1;
+        }
+
+            printf( "Gerilim guvenli seviyede: %.2f V\n", *voltage);
+
+        return 0;
+    }
+}%
+
+ 
+
+ss Monitor {
+    
+    string lastMode;
+    double lastCurrent;
+    double lastVolt;     
+
+    int safeLogged = 0;      
+
+    state init {
+
+
+        entry {
+            pvGet(mode);
+            pvGet(current);           
+            pvGet(volt); 
+            
+            strcpy(lastMode, mode);
+            lastCurrent = current;
+            lastVolt    = volt;
+
+            printf(
+                    "Başlangıç: Volt=%.2f, Akım=%.2f, Mod=%s\n", volt, current, mode);
+        }
+        when (1) {
+        } state observation
+    }
+   
+    state observation {
+        
+        when (strcmp(mode, lastMode) != 0 || current != lastCurrent || volt != lastVolt) {
+            pvGet(mode);
+            pvGet(current);
+            pvGet(volt);
+
+            if (strcmp(mode, lastMode) != 0) {
+                printf("Dongu modu degistirildi: %s\n", mode);
+                strcpy(lastMode, mode);
+            }
+
+            if (current != lastCurrent) {
+                printf("Akim degistirildi: %.2f\n", current);
+                lastCurrent = current;
+            }
+
+            if (volt != lastVolt) {
+                printf("Gerilim degistirildi: %.2f V\n", volt);
+                lastVolt = volt;
+            }
+        } state Polling
+    }
+
+    state Polling {
+
+
+        when (volt <= SAFE_VOLTAGE && !safeLogged) {
+            printf( "Gerilim seviyesi guvenlidir: %.2f V\n", volt);
+            
+
+        } state observation
+
+        when (delay(0.65)) {
+            pvGet(mode);
+            pvGet(current);
+            pvGet(volt);
+
+            if (current >= 0.99 && isOpenLoop(mode) && volt > SAFE_VOLTAGE) {
+                    double v = volt;
+                    if (decreaseVoltage(&v)) {
+                        volt = v;
+                    pvPut(volt, SYNC);                      
+                           
+                }
+            } 
+        } state observation
+    }
+}
+
+
+
+
+/* Burası bir işlem için çıkarıldı hız denemeleri için.*/
+
+/* 
+state observation {
+
+        
+        when (strcmp(mode, lastMode) != 0) {
+            pvGet(mode);                   
+            printf( "Dongu modu degistirildi: %s\n", mode);
+                strcpy(lastMode, mode);
+        } state Polling
+
+        when (current != lastCurrent) {
+            pvGet(current);
+            if (current != lastCurrent) {
+                printf( "Akim degistirildi: %.2f\n", current);
+                lastCurrent = current;
+            }
+        } state Polling
+
+        when (volt != lastVolt) {
+            pvGet(volt);
+            if (volt != lastVolt) {
+                printf( "Gerilim degistirildi: %.2f\n", volt);
+                lastVolt = volt;
+            }
+        } state Polling
+    }  
+
+*// 
